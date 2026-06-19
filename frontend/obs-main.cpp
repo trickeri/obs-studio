@@ -856,6 +856,14 @@ static bool vc_runtime_outdated()
 
 int main(int argc, char *argv[])
 {
+	/* NulStream: default to XWayland (xcb) on Linux/BSD so browser docks work —
+	 * OBS upstream disables browser panels on native Wayland (see
+	 * obs-browser/panel/browser-panel.hpp). overwrite=0 means an explicit
+	 * QT_QPA_PLATFORM (e.g. =wayland) still takes precedence. */
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+	setenv("QT_QPA_PLATFORM", "xcb", 0);
+#endif
+
 #ifndef _WIN32
 	using SignalHandlerCallback = decltype(OBSApp::sigIntSignalHandler);
 
