@@ -150,6 +150,7 @@ void OBSBasic::AddDockWidget(QDockWidget *dock, Qt::DockWidgetArea area, bool ex
 	setupDockAction(dock);
 	dock->setFeatures(features);
 	addDockWidget(area, dock);
+	ConnectDockSignals(dock);
 
 #ifdef BROWSER_AVAILABLE
 	if (extraBrowser && extraBrowserMenuDocksSeparator.isNull())
@@ -215,6 +216,7 @@ void OBSBasic::AddCustomDockWidget(QDockWidget *dock)
 
 	dock->setFeatures(features);
 	addDockWidget(Qt::RightDockWidgetArea, dock);
+	ConnectDockSignals(dock);
 
 	extraCustomDockNames.push_back(dock->objectName());
 	extraCustomDocks.push_back(dock);

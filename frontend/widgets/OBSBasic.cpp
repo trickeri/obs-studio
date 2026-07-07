@@ -458,6 +458,11 @@ OBSBasic::OBSBasic(QWidget *parent) : OBSMainWindow(parent), undo_s(ui), ui(new 
 	diskFullTimer = new QTimer(this);
 	connect(diskFullTimer, &QTimer::timeout, this, &OBSBasic::CheckDiskSpaceRemaining);
 
+	dockAutoSaveTimer = new QTimer(this);
+	dockAutoSaveTimer->setSingleShot(true);
+	dockAutoSaveTimer->setInterval(1000);
+	connect(dockAutoSaveTimer.data(), &QTimer::timeout, this, &OBSBasic::SaveDockState);
+
 	renameScene = new QAction(QTStr("Rename"), ui->scenesDock);
 	renameScene->setShortcutContext(Qt::WidgetWithChildrenShortcut);
 	connect(renameScene, &QAction::triggered, this, &OBSBasic::EditSceneName);
@@ -1366,6 +1371,24 @@ void OBSBasic::OnFirstLoad()
 {
 	OnEvent(OBS_FRONTEND_EVENT_FINISHED_LOADING);
 
+	/* Plugin docks (e.g. nul_stream_targets) register themselves during the
+	 * FINISHED_LOADING event above, which runs *after* the initial
+	 * restoreState() in OBSInit.  obs_frontend_add_dock_by_id() drops them in
+	 * floating+hidden by default, so re-apply the saved layout now that those
+	 * docks exist to return them to their saved position and visibility. */
+	const char *dockStateStr = config_get_string(App()->GetUserConfig(), "BasicWindow", "DockState");
+	if (dockStateStr) {
+		QByteArray dockState = QByteArray::fromBase64(QByteArray(dockStateStr));
+		restoreState(dockState);
+	}
+
+	/* Wire every dock (built-in, browser and plugin) to the debounced
+	 * auto-save, then arm it.  Runtime-added docks are hooked up in
+	 * AddDockWidget()/AddCustomDockWidget(). */
+	for (QDockWidget *dock : findChildren<QDockWidget *>())
+		ConnectDockSignals(dock);
+	dockAutoSaveReady = true;
+
 #ifdef WHATSNEW_ENABLED
 	/* Attempt to load init screen if available */
 	if (cef) {
@@ -1872,6 +1895,39 @@ void OBSBasic::saveAll()
 	config_set_bool(App()->GetUserConfig(), "BasicWindow", "DocksLocked", ui->lockDocks->isChecked());
 	config_set_bool(App()->GetUserConfig(), "BasicWindow", "SideDocks", ui->sideDocks->isChecked());
 	config_save_safe(App()->GetUserConfig(), "tmp", nullptr);
+}
+
+/* Persist just the dock layout.  Unlike saveAll() this is safe to call
+ * repeatedly at runtime: it is gated so it never runs before the initial
+ * layout has been restored or while the window is tearing down. */
+void OBSBasic::SaveDockState()
+{
+	if (!dockAutoSaveReady || isClosing())
+		return;
+
+	config_set_string(App()->GetUserConfig(), "BasicWindow", "DockState", saveState().toBase64().constData());
+	config_save_safe(App()->GetUserConfig(), "tmp", nullptr);
+}
+
+/* (Re)arm the debounce timer.  Coalesces the burst of signals emitted while
+ * dragging a dock into a single write ~1s after the last change. */
+void OBSBasic::ScheduleDockStateSave()
+{
+	if (!dockAutoSaveReady)
+		return;
+
+	dockAutoSaveTimer->start();
+}
+
+void OBSBasic::ConnectDockSignals(QDockWidget *dock)
+{
+	if (!dock)
+		return;
+
+	connect(dock, &QDockWidget::dockLocationChanged, this, &OBSBasic::ScheduleDockStateSave,
+		Qt::UniqueConnection);
+	connect(dock, &QDockWidget::topLevelChanged, this, &OBSBasic::ScheduleDockStateSave, Qt::UniqueConnection);
+	connect(dock, &QDockWidget::visibilityChanged, this, &OBSBasic::ScheduleDockStateSave, Qt::UniqueConnection);
 }
 
 bool OBSBasic::isReadyToClose()

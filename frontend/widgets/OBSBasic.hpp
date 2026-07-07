@@ -444,6 +444,17 @@ private:
 	QPointer<OBSDock> controlsDock;
 	QPointer<OBSDock> mixerDock;
 
+	/* Debounced auto-save of the dock layout.  Upstream only persists the
+	 * dock state in saveAll() on a clean exit; these fire a delayed save
+	 * whenever a dock is moved/floated/shown so layout changes survive an
+	 * unclean shutdown. */
+	QPointer<QTimer> dockAutoSaveTimer;
+	bool dockAutoSaveReady = false;
+
+	void SaveDockState();
+	void ScheduleDockStateSave();
+	void ConnectDockSignals(QDockWidget *dock);
+
 public:
 	void AddDockWidget(QDockWidget *dock, Qt::DockWidgetArea area, bool extraBrowser = false);
 	void RemoveDockWidget(const QString &name);
